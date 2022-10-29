@@ -118,7 +118,7 @@ func Scrape(firstPageLink string) (err error) {
 			p.CurrentDoc, err = GetDoc(p.NextPageLink)
 			if err != nil {
 				// Write what we have anyway
-				if WRITE_DIRECT_TO_DB {
+				if !WRITE_DIRECT_TO_DB {
 					p.writeSQLFile()
 				}
 				return
@@ -134,7 +134,7 @@ func Scrape(firstPageLink string) (err error) {
 	}
 
 	// Write directly to db?
-	if WRITE_DIRECT_TO_DB {
+	if !WRITE_DIRECT_TO_DB {
 		p.writeSQLFile()
 	}
 
