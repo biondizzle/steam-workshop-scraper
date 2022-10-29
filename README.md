@@ -6,3 +6,5 @@ But the docs are a mess, maybe I'm missing it?
 
 This is just a quick way to parse the pages
 
+TODO:
+  - Fix `published_at_unix` field. I stupidly misread `data-publishedfileid` as `"DATE"-publishedfileid`. So just needs to be grabbed from the Individuakl Workshop Page inside the div `.detailsStatsContainerRight`
