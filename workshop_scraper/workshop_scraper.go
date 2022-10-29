@@ -1,14 +1,17 @@
 package workshop_scraper
 
 import (
+	"encoding/json"
 	"errors"
 	"fmt"
+	"io/ioutil"
 	"net/http"
 	"os"
 	"strings"
 
 	"github.com/PuerkitoBio/goquery"
 	"github.com/spf13/cast"
+	"gitlab.com/barry_nevio/goo-tools/Database"
 )
 
 type Props struct {
@@ -17,9 +20,13 @@ type Props struct {
 	CurrentDoc                *goquery.Document
 	CurrentIndiviualWSItemDoc *goquery.Document
 	SQLVals                   []string
+	DBConn                    Database.Connection
 }
 
 const SQL_FILE = "dump.sql"
+const DEFAULT_INSERT_SQL = "INSERT INTO `escape_simulator_room` (`title`, `link`, `num_of_players`, `rating`, `cover_image`, `published_at_unix`) VALUES "
+const DEFAULT_INSERT_PREPARED_VALUES_SQL = "(?, ?, ?, ?, ?, ?)"
+const WRITE_DIRECT_TO_DB = true
 
 // GetRating ... figures out the rating based on the image link
 func GetRating(imgLink string) (rating int) {
@@ -90,6 +97,13 @@ func Scrape(firstPageLink string) (err error) {
 		return
 	}
 
+	// Settdb conn
+	err = p.setDBConn()
+
+	if err != nil {
+		return
+	}
+
 	pageNum := 1
 	for p.setNextPageLink() || !p.IsLastPage {
 
@@ -104,7 +118,9 @@ func Scrape(firstPageLink string) (err error) {
 			p.CurrentDoc, err = GetDoc(p.NextPageLink)
 			if err != nil {
 				// Write what we have anyway
-				p.writeSQLFile()
+				if WRITE_DIRECT_TO_DB {
+					p.writeSQLFile()
+				}
 				return
 			}
 		}
@@ -117,7 +133,40 @@ func Scrape(firstPageLink string) (err error) {
 		}*/
 	}
 
-	p.writeSQLFile()
+	// Write directly to db?
+	if WRITE_DIRECT_TO_DB {
+		p.writeSQLFile()
+	}
+
+	p.DBConn.Close()
+
+	return
+}
+
+// setDBConn ...
+func (p *Props) setDBConn() (err error) {
+	// Open Settings File
+	settingsReader, err := os.Open("./settings.json")
+	if err != nil {
+		return
+	}
+	defer settingsReader.Close()
+
+	// Read settings file
+	settingsBytes, err := ioutil.ReadAll(settingsReader)
+	if err != nil {
+		return
+	}
+
+	// Marshal
+	dbSett := Database.Settings{}
+	_ = json.Unmarshal(settingsBytes, &dbSett)
+
+	// Close
+	settingsReader.Close()
+
+	// Add DB connection
+	p.DBConn, err = Database.New(dbSett)
 
 	return
 }
@@ -131,7 +180,7 @@ func (p *Props) writeSQLFile() {
 
 	defer f.Close()
 
-	if _, err = f.WriteString("INSERT INTO `escape_simulator_room` (`title`, `link`, `num_of_players`, `rating`, `cover_image`, `published_at_unix`) VALUES \n"); err != nil {
+	if _, err = f.WriteString(DEFAULT_INSERT_SQL + "\n"); err != nil {
 		panic(err)
 	}
 
@@ -171,7 +220,21 @@ func (p *Props) setSQLVals() {
 		// Clear this item doc
 		p.CurrentIndiviualWSItemDoc = nil
 
-		p.SQLVals = append(p.SQLVals, "('"+MysqlRealEscapeString(title)+"', '"+MysqlRealEscapeString(link)+"', '"+MysqlRealEscapeString(players)+"', "+cast.ToString(rating)+", '"+MysqlRealEscapeString(coverImage)+"', '"+MysqlRealEscapeString(datePublishedUnix)+"')")
+		// Write directly to db?
+		if WRITE_DIRECT_TO_DB {
+			db, _ := p.DBConn.Get()
+			_, _ = db.Exec(DEFAULT_INSERT_SQL+DEFAULT_INSERT_PREPARED_VALUES_SQL,
+				title,
+				link,
+				players,
+				rating,
+				coverImage,
+				datePublishedUnix,
+			)
+		} else {
+			p.SQLVals = append(p.SQLVals, "('"+MysqlRealEscapeString(title)+"', '"+MysqlRealEscapeString(link)+"', '"+MysqlRealEscapeString(players)+"', "+cast.ToString(rating)+", '"+MysqlRealEscapeString(coverImage)+"', '"+MysqlRealEscapeString(datePublishedUnix)+"')")
+		}
+
 	})
 }
 
