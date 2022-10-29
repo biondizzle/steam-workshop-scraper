@@ -1,0 +1,16 @@
+{
+	"database": {
+		"user": "root",
+		"password": "root",
+		"address": "localhost",
+		"port": "3306",
+		"db": "steam_workshop",
+		"ssl": {
+			"enabled": false,
+			"reconnect_sleep": 10,
+			"cert": {
+				"ca": ""
+			}
+		}
+	}
+}
