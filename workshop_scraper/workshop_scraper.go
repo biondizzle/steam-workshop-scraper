@@ -12,13 +12,40 @@ import (
 )
 
 type Props struct {
-	NextPageLink string
-	IsLastPage   bool
-	CurrentDoc   *goquery.Document
-	SQLVals      []string
+	NextPageLink              string
+	IsLastPage                bool
+	CurrentDoc                *goquery.Document
+	CurrentIndiviualWSItemDoc *goquery.Document
+	SQLVals                   []string
 }
 
 const SQL_FILE = "dump.sql"
+
+// GetRating ... figures out the rating based on the image link
+func GetRating(imgLink string) (rating int) {
+
+	if strings.Contains(imgLink, "5-star") {
+		return 5
+	}
+
+	if strings.Contains(imgLink, "4-star") {
+		return 4
+	}
+
+	if strings.Contains(imgLink, "3-star") {
+		return 3
+	}
+
+	if strings.Contains(imgLink, "2-star") {
+		return 2
+	}
+
+	if strings.Contains(imgLink, "1-star") {
+		return 1
+	}
+
+	return
+}
 
 // MysqlRealEscapeString ...
 func MysqlRealEscapeString(value string) string {
@@ -72,10 +99,14 @@ func Scrape(firstPageLink string) (err error) {
 		// Set the SQL vales
 		p.setSQLVals()
 
-		// Set the new current doc
-		p.CurrentDoc, err = GetDoc(p.NextPageLink)
-		if err != nil {
-			return
+		// Set the new current doc.. if there is one to get
+		if len(p.NextPageLink) > 0 {
+			p.CurrentDoc, err = GetDoc(p.NextPageLink)
+			if err != nil {
+				// Write what we have anyway
+				p.writeSQLFile()
+				return
+			}
 		}
 
 		// Increment the page number
@@ -100,7 +131,7 @@ func (p *Props) writeSQLFile() {
 
 	defer f.Close()
 
-	if _, err = f.WriteString("INSERT INTO `escape_simulator_room` (`title`, `link`, `num_of_players`) VALUES \n"); err != nil {
+	if _, err = f.WriteString("INSERT INTO `escape_simulator_room` (`title`, `link`, `num_of_players`, `rating`, `cover_image`, `published_at_unix`) VALUES \n"); err != nil {
 		panic(err)
 	}
 
@@ -122,10 +153,25 @@ func (p *Props) setSQLVals() {
 		// get link of workshop item
 		link := s.Find(".ugc").AttrOr("href", "")
 
-		// Get number of players
-		players, _ := p.getNumOfPlayers(link)
+		// Download the doc for this item
+		p.CurrentIndiviualWSItemDoc, _ = GetDoc(link)
 
-		p.SQLVals = append(p.SQLVals, "('"+MysqlRealEscapeString(title)+"', '"+MysqlRealEscapeString(link)+"', '"+MysqlRealEscapeString(players)+"')")
+		// Get number of players
+		players, _ := p.getNumOfPlayers()
+
+		// Get rating
+		rating := GetRating(s.Find(".fileRating").AttrOr("src", ""))
+
+		// get cover image
+		coverImage := p.getCoverImage()
+
+		// Get date published unix
+		datePublishedUnix := s.Find(".ugc").AttrOr("data-publishedfileid", "")
+
+		// Clear this item doc
+		p.CurrentIndiviualWSItemDoc = nil
+
+		p.SQLVals = append(p.SQLVals, "('"+MysqlRealEscapeString(title)+"', '"+MysqlRealEscapeString(link)+"', '"+MysqlRealEscapeString(players)+"', "+cast.ToString(rating)+", '"+MysqlRealEscapeString(coverImage)+"', '"+MysqlRealEscapeString(datePublishedUnix)+"')")
 	})
 }
 
@@ -147,24 +193,12 @@ func (p *Props) setNextPageLink() bool {
 }
 
 // getNumOfPlayers ...
-func (p *Props) getNumOfPlayers(link string) (nOP string, err error) {
+func (p *Props) getNumOfPlayers() (nOP string, err error) {
 
 	nOP = "Not Specified"
 
-	// Link empty
-	if len(link) < 1 {
-		return
-	}
-
-	// DOwnload the doc
-	doc, err := GetDoc(link)
-
-	if err != nil {
-		return
-	}
-
 	// Get the number of players
-	doc.Find(".workshopTags").Each(func(i int, s *goquery.Selection) {
+	p.CurrentIndiviualWSItemDoc.Find(".workshopTags").Each(func(i int, s *goquery.Selection) {
 		s.Children().Each(func(i int, s *goquery.Selection) {
 			title := s.Text()
 			if strings.Contains(title, "Number of players") || strings.Contains(title, "Tags") {
@@ -176,4 +210,9 @@ func (p *Props) getNumOfPlayers(link string) (nOP string, err error) {
 	})
 
 	return
+}
+
+// getCoverImage ...
+func (p *Props) getCoverImage() (coverImage string) {
+	return p.CurrentIndiviualWSItemDoc.Find("#previewImage").AttrOr("src", "")
 }
